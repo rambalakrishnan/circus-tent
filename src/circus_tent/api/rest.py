@@ -97,9 +97,7 @@ def _run_result_body(result: RunResult) -> dict[str, Any]:
         "resumed_from": result.resumed_from,
         # Wire contract per docs/contracts/api.md: step payloads (internal
         # extraction detail) are not exposed; the run-level `extracted` field is.
-        "steps": [
-            {k: v for k, v in asdict(s).items() if k != "payload"} for s in result.steps
-        ],
+        "steps": [{k: v for k, v in asdict(s).items() if k != "payload"} for s in result.steps],
         "checkpoints": [],
         "stabilization_partial": result.stabilization_partial,
         "schema_incomplete": result.schema_incomplete,

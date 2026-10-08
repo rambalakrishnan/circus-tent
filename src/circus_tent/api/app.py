@@ -11,16 +11,72 @@ from __future__ import annotations
 from collections.abc import AsyncIterator, Mapping
 from contextlib import asynccontextmanager
 from pathlib import Path
+from time import monotonic
 
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse, Response
 from starlette.middleware.base import BaseHTTPMiddleware, RequestResponseEndpoint
 
 from circus_tent.api.auth import AuthError
+from circus_tent.api.fairness import QueueTooDeep
 from circus_tent.api.mcp_server import build_mcp_server
 from circus_tent.api.rest import router
 from circus_tent.api.service import Service
+from circus_tent.browser.rate_limiter import RateLimited
+from circus_tent.engine.budgets import BudgetExceeded
+from circus_tent.engine.models import ModelError
+from circus_tent.engine.state_machine import IdempotencyConflict
 from circus_tent.telemetry import get_logger, get_metrics, traceparent_from
+
+
+def _install_error_handlers(app: FastAPI) -> None:
+    """Map domain exceptions raised inside Service to the documented envelope.
+
+    Without these, an exception raised below the route (e.g. AuthError from a
+    scope check inside Service.run) escapes the middleware as a bare 500,
+    contradicting docs/contracts/api.md.
+    """
+
+    def _response(
+        status: int, code: str, message: str, headers: dict[str, str] | None = None
+    ) -> JSONResponse:
+        return JSONResponse(
+            status_code=status,
+            content={"api_version": "v1", "error": {"code": code, "message": message}},
+            headers=headers or {},
+        )
+
+    @app.exception_handler(AuthError)
+    async def _handle_auth(request: Request, exc: AuthError) -> JSONResponse:
+        headers = {"WWW-Authenticate": "Bearer"} if exc.status == 401 else {}
+        return _response(exc.status, exc.code, exc.message, headers)
+
+    @app.exception_handler(QueueTooDeep)
+    async def _handle_queue(request: Request, exc: QueueTooDeep) -> JSONResponse:
+        return _response(
+            429,
+            "RATE_LIMITED",
+            str(exc),
+            {"Retry-After": "1", "X-Queue-Depth": str(exc.depth)},
+        )
+
+    @app.exception_handler(RateLimited)
+    async def _handle_rate_limited(request: Request, exc: RateLimited) -> JSONResponse:
+        remaining = max(1, int(exc.until - monotonic()))
+        return _response(429, "RATE_LIMITED", str(exc), {"Retry-After": str(remaining)})
+
+    @app.exception_handler(IdempotencyConflict)
+    async def _handle_conflict(request: Request, exc: IdempotencyConflict) -> JSONResponse:
+        return _response(409, "IDEMPOTENCY_CONFLICT", str(exc))
+
+    @app.exception_handler(BudgetExceeded)
+    async def _handle_budget(request: Request, exc: BudgetExceeded) -> JSONResponse:
+        return _response(429, "BUDGET_EXCEEDED", str(exc))
+
+    @app.exception_handler(ModelError)
+    async def _handle_model(request: Request, exc: ModelError) -> JSONResponse:
+        return _response(502, "HEAL_DISABLED", str(exc))
+
 
 #: Set by the lifespan shutdown handler; the CLI reads it for the process exit
 #: code (0 = clean drain, 1 = forced).
@@ -96,6 +152,7 @@ def create_app(
     app = FastAPI(title="circus-tent", version="0.1.0", lifespan=lifespan)
     app.state.service = service
     app.state.traceparent = traceparent_from
+    _install_error_handlers(app)
     app.add_middleware(_AuthMiddleware, service=service)
     app.include_router(router)
     mcp = build_mcp_server(service)
