@@ -1,0 +1,89 @@
+# Shard topology. schema_version: 1.
+# Routing rule: patterns evaluated in declaration order; first match wins.
+# The `misc` shard must remain last and match "*".
+schema_version: 1
+
+# Profiles root is expanded at runtime; ${VAR} and ${VAR:-default} env refs allowed.
+profiles_root: ${PROFILES_DIR:-~/.automation-wrapper}/profiles
+
+defaults:
+  max_tabs: 12
+  recycle_after_pages: 500
+  recycle_grace_seconds: 60
+  headless: virtual          # first-run MFA bootstrap forces headless=False
+  # B6: rate ceilings toward the TARGET site (not the local API).
+  request_rate_per_minute: 60        # per-shard ceiling toward target domain
+  session_step_rate_per_minute: 20   # per-session ceiling within a shard
+  backoff:
+    triggers: [429, 403, 503]        # + challenge-page detection at runtime
+    initial_wait_seconds: 30
+    max_wait_seconds: 600
+    cooldown_seconds: 120            # page counter frozen during cooldown
+
+shards:
+  - name: workday
+    domain_patterns:
+      - "*.myworkdayjobs.com"
+      - "*.workdayjobs.com"
+      - "*.myworkday.com"
+    profile_dir: profiles/workday_session
+    # B3: session-validity preflight. Markers are authenticated-state markers:
+    # if the marker is absent after navigating preflight_url, the session is
+    # considered expired and the run fails fast with SESSION_EXPIRED.
+    # Workday shells are tenant-specific; tune url+marker per tenant.
+    preflight:
+      url: "https://www.myworkday.com/wday/authgwy/signin.htmld"
+      marker: "TENANT_SPECIFIC"
+
+  - name: greenhouse
+    domain_patterns:
+      - "*.greenhouse.io"
+      - "boards.greenhouse.io"
+    profile_dir: profiles/greenhouse_session
+    preflight:
+      url: "https://boards.greenhouse.io/dashboard"
+      marker: "text=Applications"
+
+  - name: lever
+    domain_patterns:
+      - "*.lever.co"
+      - "jobs.lever.co"
+    profile_dir: profiles/lever_session
+    preflight:
+      url: "https://jobs.lever.co"
+      marker: "TENANT_SPECIFIC"
+
+  - name: governmentjobs
+    domain_patterns:
+      - "*.governmentjobs.com"
+      - "governmentjobs.com"
+    profile_dir: profiles/governmentjobs_session
+    preflight:
+      url: "https://www.governmentjobs.com/careers/home"
+      marker: "data-user-role"
+
+  - name: indeed
+    domain_patterns:
+      - "*.indeed.com"
+      - "www.indeed.com"
+    profile_dir: profiles/indeed_session
+    preflight:
+      url: "https://www.indeed.com/"
+      marker: "text=Profile"
+
+  - name: linkedin
+    domain_patterns:
+      - "*.linkedin.com"
+      - "www.linkedin.com"
+    profile_dir: profiles/linkedin_session
+    preflight:
+      url: "https://www.linkedin.com/feed"
+      marker: "nav.global-nav"
+
+  - name: misc
+    domain_patterns:
+      - "*"
+    profile_dir: profiles/misc_session
+    preflight:
+      url: ""
+      marker: ""

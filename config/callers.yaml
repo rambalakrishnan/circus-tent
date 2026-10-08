@@ -1,0 +1,14 @@
+# Per-caller access control (B1). schema_version: 1.
+# Each caller authenticates with a bearer key resolved from key_env.
+# Scopes: which shards, tools, and accounts the caller may use, plus its
+# own rate limit — independent of session quotas, so one compromised key
+# cannot saturate the shard pool.
+schema_version: 1
+
+callers:
+  - id: local-dev
+    key_env: AUTOMATION_WRAPPER_API_KEY
+    shards: ["*"]
+    tools: ["*"]
+    accounts: ["*"]
+    rate_limit_per_minute: 120

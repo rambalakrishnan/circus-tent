@@ -1,0 +1,77 @@
+# Model registry. schema_version: 1.
+# All bindings externalized; env var NAMES only, resolved at runtime.
+# api_format: `responses` (OpenAI Responses API) or `chat_completions`.
+# Providers are tried in order; a timeout or 5xx fails over to the next.
+schema_version: 1
+
+roles:
+  text_healing:
+    providers:
+      - name: muse-spark-1.3-contributor
+        api_base: ${MUSE_API_BASE}
+        api_key_env: MUSE_API_KEY
+        api_format: responses
+        # NOTE: OpenCode Go /responses rejects max_output_tokens < 16 (verified
+        # 2026-10-08). Keep >= 16.
+        max_tokens: 4096
+        temperature: 0.1
+        timeout_seconds: 30
+      - name: muse-spark-1.2-contributor
+        api_base: ${MUSE_API_BASE}
+        api_key_env: MUSE_API_KEY
+        api_format: responses
+        max_tokens: 4096
+        temperature: 0.1
+        timeout_seconds: 30
+
+  vision_fallback:
+    providers:
+      - name: deepseek-v4-flash-vision-exp
+        api_base: ${DEEPSEEK_API_BASE}
+        api_key_env: DEEPSEEK_API_KEY
+        api_format: chat_completions
+        max_tokens: 1024
+        temperature: 0.1
+        timeout_seconds: 30
+
+# B9: cost controls. Token budgets are enforced by the LiteLLM conduit and
+# the budgets engine; the circuit breaker disables the heal tier per shard
+# when heal rate exceeds the threshold in the rolling window.
+budgets:
+  session_daily_text_tokens: 200000
+  session_daily_vision_tokens: 100000
+  shard_daily_text_tokens: 1000000
+  shard_daily_vision_tokens: 500000
+  circuit_breaker:
+    window_seconds: 3600
+    heal_rate_threshold: 0.30    # >30% of steps healed in window => disable heal tier
+    cooldown_seconds: 1800
+
+# OpenCode Go requires a custom User-Agent and a stable per-conversation
+# session header (see docs/external/opencode-go.md). These are sent on every
+# model request.
+client_headers:
+  user_agent: "circus-tent/0.1"
+  session_header_name: "x-opencode-session"
+
+# D3: prompt templates are versioned and pinned per run. Changing a template
+# requires bumping prompt_version; selector strategies cached under an older
+# prompt version are not invalidated silently.
+prompt_templates:
+  version: 1
+  heal: |
+    You are repairing a broken browser-automation selector.
+    The target element was described as: {fallback_text}
+    The failed selector was: {failed_selector}
+    Below is a pruned DOM of the current page. Return ONLY a JSON object:
+    {{"selector": "<css or xpath>", "strategy": "css|xpath", "confidence": 0.0-1.0, "reason": "brief"}}
+    If the element does not exist, return {{"selector": null, "strategy": null, "confidence": 0, "reason": "not found"}}.
+    DOM:
+    {pruned_dom}
+  vision: |
+    You are locating a UI element in a screenshot for browser automation.
+    The target element is described as: {fallback_text}
+    Return ONLY a JSON object with the bounding box of the target element in
+    screenshot pixel coordinates:
+    {{"x": int, "y": int, "width": int, "height": int, "confidence": 0.0-1.0}}
+    If the element is not visible, return {{"x": null, "y": null, "width": null, "height": null, "confidence": 0}}.

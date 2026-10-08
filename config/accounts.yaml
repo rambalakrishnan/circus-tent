@@ -1,0 +1,26 @@
+# Account registry. schema_version: 1.
+# References env var NAMES only — never values. The file contains no credentials.
+schema_version: 1
+
+accounts:
+  - id: neogov
+    shard: governmentjobs
+    username_env: NEOGOV_USERNAME
+    password_env: NEOGOV_PASSWORD
+    mfa_profile: governmentjobs_session
+    quota: 3                  # Layer-2 fairness: concurrent tabs per session
+
+  - id: linkedin
+    shard: linkedin
+    username_env: LINKEDIN_USERNAME
+    password_env: LINKEDIN_PASSWORD
+    mfa_profile: linkedin_session
+    quota: 3
+
+  - id: workday_acme
+    shard: workday
+    username_env: WORKDAY_ACME_USERNAME
+    password_env: WORKDAY_ACME_PASSWORD
+    tenant: acme
+    mfa_profile: workday_session
+    quota: 3
