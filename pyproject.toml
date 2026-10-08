@@ -1,0 +1,87 @@
+[project]
+name = "circus-tent"
+version = "0.1.0"
+description = "Domain-isolated high-concurrency web-automation wrapper over Camoufox/Playwright with MCP + REST interfaces"
+readme = "README.md"
+requires-python = ">=3.14"
+license = { text = "Proprietary" }
+dependencies = [
+  "camoufox==0.5.7",
+  "crawl4ai>=0.9.4,<0.10",
+  "fastapi>=0.140",
+  "uvicorn[standard]>=0.51",
+  "mcp>=1.28",
+  "litellm>=1.60",
+  "httpx>=0.28",
+  "pydantic>=2.9",
+  "pyyaml>=6.0",
+  "jsonschema>=4.23",
+  "prometheus-client>=0.21",
+  "opentelemetry-api>=1.28",
+  "opentelemetry-sdk>=1.28",
+  "pillow>=11.0",
+  "partial-json-parser>=0.2",
+  "llm-json-repair>=0.3",
+]
+
+[project.optional-dependencies]
+dev = [
+  "pytest>=8.3",
+  "pytest-asyncio>=0.24",
+  "pytest-cov>=6",
+  "ruff>=0.8",
+  "mypy>=1.13",
+  "respx>=0.22",
+  "types-pyyaml>=6.0",
+]
+
+[project.scripts]
+circus-tent = "circus_tent.cli.main:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/circus_tent"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py314"
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM"]
+ignore = ["B008"]  # FastAPI Depends() in defaults is idiomatic
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["B", "SIM"]
+"benchmarks/**" = ["B", "SIM"]
+
+[tool.mypy]
+python_version = "3.14"
+strict = true
+packages = ["circus_tent"]
+exclude = ["tests", "benchmarks"]
+
+[[tool.mypy.overrides]]
+module = [
+  "crawl4ai.*",
+  "jsonschema.*",
+  "partial_json_parser.*",
+  "llm_json_repair.*",
+  "camoufox.*",
+  "litellm.*",
+]
+ignore_missing_imports = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+addopts = "-ra --strict-markers"
+markers = [
+  "unit: fast, no network, no browser",
+  "integration: local fixtures, optional browser",
+  "benchmark: acceptance-criteria harness (slow)",
+  "live: touches real external sites or accounts (excluded by default)",
+]
