@@ -220,12 +220,19 @@ textual nodes; feeds the heal model).
 
 ### 5.5 Extraction Pipeline (`src/circus_tent/parser/extraction.py`)
 
-Crawl4AI in-process — no sidecar, no HTTP pipe, no serialization boundary. Single-page:
-BM25ContentFilter (user_query, threshold 1.2) when a query is supplied, else
-PruningContentFilter (0.4); DefaultMarkdownGenerator; `cache_mode="BYPASS"`.
-Batch: MemoryAdaptiveDispatcher with a memory ceiling. Schema-guided extraction is a
-deterministic post-processing step (jsonschema-based heuristics over the markdown), not
-an LLM call; unsatisfiable schemas return best-effort partial + `schema_incomplete`.
+Crawl4AI in-process — no sidecar, no HTTP pipe, no serialization boundary.
+Reduction uses crawl4ai's content filters (`BM25ContentFilter` when a query is supplied,
+else the lxml `PruningContentFilterLXML`) plus `DefaultMarkdownGenerator` **directly**:
+both are synchronous pure-Python, so reduction needs no browser runtime and runs at
+~106 ms p50 / ~165 ms p95 for 150 KB documents (acceptance criterion 2). The
+`AsyncWebCrawler` route is retained only as a fallback for API drift — it spawns a
+browser per call and costs ~3 s per document. Raw HTML strings are fed to the filter
+unpruned (the semantic pruner's marker-annotated output is 7x slower through the
+markdown generator); the semantic pruner applies on the live-page path, where shadow-DOM
+uncloaking is possible. Batch: bounded-concurrency gather (crawl4ai 0.9.4 has no
+MemoryAdaptiveDispatcher). Schema-guided extraction is a deterministic post-processing
+step (jsonschema-validated heuristics over the markdown), not an LLM call;
+unsatisfiable schemas return best-effort partial + `schema_incomplete`.
 
 ### 5.6 Execution Engine (`src/circus_tent/engine/`)
 

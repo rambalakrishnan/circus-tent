@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import contextlib
 import json
 import logging
 import os
@@ -178,28 +179,42 @@ def c1_fingerprint_stability(args: argparse.Namespace, _ctx: dict[str, Any]) -> 
     cfg = _bench_shard_config(profile_dir, "virtual")
     manifest_hashes: list[str] = []
     snapshots: list[dict[str, Any]] = []
-    for _ in range(args.launches):
-        shard = Shard(cfg, profile_dir, get_metrics(), logging.getLogger("bench"))
-        try:
-            asyncio.run(asyncio.wait_for(shard.initialize(), timeout=args.browser_timeout))
-            snapshots.append(dict(shard._fp_snapshot))
-            manifest_hashes.append(str(shard._manifest.manifest_hash))
-        except Exception as exc:  # noqa: BLE001
-            with _suppress_bg():
-                asyncio.run(asyncio.wait_for(shard.terminate(), timeout=args.browser_timeout))
-            return Criterion(
-                "C1",
-                "fingerprint stability",
-                target,
-                f"launch failed ({len(snapshots)} ok)",
-                SKIPPED,
-                notes=(
-                    "browser could not launch (no display / no Camoufox runtime): "
-                    f"{type(exc).__name__}: {exc}"
-                ),
-            )
-        with _suppress_bg():
-            asyncio.run(asyncio.wait_for(shard.terminate(), timeout=args.browser_timeout))
+    completed: list[int] = [0]
+
+    async def _launch_loop() -> None:
+        """All launches (and their teardowns) must share ONE event loop.
+
+        Camoufox/Playwright objects are bound to the loop that created them;
+        running initialize() and terminate() under separate asyncio.run() calls
+        makes teardown hang (the wrapper then SIGKILLs at the wall-clock budget
+        and the criterion reports SKIPPED). Verified: a single-loop sequence of
+        3 launches gives identical fingerprints and clean exits.
+        """
+        for _ in range(args.launches):
+            shard = Shard(cfg, profile_dir, get_metrics(), logging.getLogger("bench"))
+            await asyncio.wait_for(shard.initialize(), timeout=args.browser_timeout)
+            try:
+                snapshots.append(dict(shard._fp_snapshot))
+                manifest_hashes.append(str(shard._manifest.manifest_hash))
+            finally:
+                with contextlib.suppress(Exception):
+                    await asyncio.wait_for(shard.terminate(), timeout=args.browser_timeout)
+            completed[0] += 1
+
+    try:
+        asyncio.run(asyncio.wait_for(_launch_loop(), timeout=args.browser_timeout * args.launches))
+    except Exception as exc:  # noqa: BLE001
+        return Criterion(
+            "C1",
+            "fingerprint stability",
+            target,
+            f"launch failed ({completed[0]} ok)",
+            SKIPPED,
+            notes=(
+                "browser could not launch (no display / no Camoufox runtime): "
+                f"{type(exc).__name__}: {exc}"
+            ),
+        )
 
     differing: set[str] = set()
     for snap in snapshots[1:]:
