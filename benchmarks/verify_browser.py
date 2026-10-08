@@ -76,9 +76,11 @@ async def main() -> int:
             return 2
         fingerprints.append(fp)
         hashes.add(meta["manifest_hash"])
-        print(f"launch {i}: ok  canvas={fp.get('canvas')} webgl={fp.get('webgl')} "
-              f"audio={fp.get('audio')} fonts={len(fp.get('fonts') or [])} "
-              f"ua={str((fp.get('navigator') or {}).get('userAgent'))[:40]!r}")
+        print(
+            f"launch {i}: ok  canvas={fp.get('canvas')} webgl={fp.get('webgl')} "
+            f"audio={fp.get('audio')} fonts={len(fp.get('fonts') or [])} "
+            f"ua={str((fp.get('navigator') or {}).get('userAgent'))[:40]!r}"
+        )
 
     drift = []
     for i in range(1, len(fingerprints)):
@@ -93,14 +95,18 @@ async def main() -> int:
     print(f"fingerprint drift across launches: {drift or 'NONE'}")
 
     ok = not drift and len(hashes) == 1 and manifest_ok and perm == "0o700"
-    print(json.dumps({
-        "result": "PASS" if ok else "FAIL",
-        "launches": args.launches,
-        "headless": args.headless,
-        "drift": drift,
-        "distinct_manifest_hashes": len(hashes),
-        "profile_mode": perm,
-    }))
+    print(
+        json.dumps(
+            {
+                "result": "PASS" if ok else "FAIL",
+                "launches": args.launches,
+                "headless": args.headless,
+                "drift": drift,
+                "distinct_manifest_hashes": len(hashes),
+                "profile_mode": perm,
+            }
+        )
+    )
     shutil.rmtree(tmp, ignore_errors=True)
     return 0 if ok else 1
 
