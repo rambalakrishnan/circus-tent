@@ -71,6 +71,10 @@ class StepResult:
     selector: str | None
     error: str | None
     duration_ms: int
+    # Additive field: carries extraction output for `extract` steps so the run
+    # loop can surface it on RunResult.extracted. Frozen dataclasses cannot be
+    # monkey-patched, so this is a declared field (default None for other steps).
+    payload: dict[str, Any] | None = None
 
 
 @dataclass(frozen=True)
@@ -276,7 +280,7 @@ class ExecutionEngine:
             if result.status in ("ok", "healed", "vision") and step.side_effecting:
                 self.ledger.mark_side_effect_done(run_id, step.id)
             if step.type == "extract" and result.status == "ok":
-                payload = getattr(result, "_payload", None)
+                payload = result.payload
                 if payload:
                     extracted = payload.get("structured")
                     schema_incomplete = payload.get("schema_incomplete", False)
@@ -345,12 +349,15 @@ class ExecutionEngine:
             error: str | None,
             payload: dict[str, Any] | None = None,
         ) -> StepResult:
-            r = StepResult(
-                step.id, status, tier, selector, error, int((time.monotonic() - started) * 1000)
+            return StepResult(
+                step.id,
+                status,
+                tier,
+                selector,
+                error,
+                int((time.monotonic() - started) * 1000),
+                payload,
             )
-            if payload:
-                r._payload = payload  # type: ignore[attr-defined]
-            return r
 
         page = tc.page
         try:

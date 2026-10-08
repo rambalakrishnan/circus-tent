@@ -35,28 +35,41 @@ class ExtractionResult:
 
 
 def _crawl4ai_imports() -> tuple[Any, Any, Any, Any, Any]:
-    """Lazy import — crawl4ai is heavy; unit tests stay fast."""
+    """Lazy import — crawl4ai is heavy; unit tests stay fast.
+
+    The pruning filter prefers crawl4ai's lxml implementation when present
+    (identical output, ~10x faster per upstream — this is what keeps
+    acceptance-criterion 2's p95 within target), falling back to the
+    BeautifulSoup-based filter on older versions.
+    """
     from crawl4ai import AsyncWebCrawler, CrawlerRunConfig
     from crawl4ai.content_filter_strategy import BM25ContentFilter, PruningContentFilter
     from crawl4ai.markdown_generation_strategy import DefaultMarkdownGenerator
+
+    try:
+        from crawl4ai.content_filter_strategy import PruningContentFilterLXML
+
+        pruning_cls: Any = PruningContentFilterLXML
+    except ImportError:  # pragma: no cover - older crawl4ai
+        pruning_cls = PruningContentFilter
 
     return (
         AsyncWebCrawler,
         CrawlerRunConfig,
         BM25ContentFilter,
-        PruningContentFilter,
+        pruning_cls,
         DefaultMarkdownGenerator,
     )
 
 
 def _build_config(query: str | None) -> Any:
-    _, CrawlerRunConfig, BM25ContentFilter, PruningContentFilter, DefaultMarkdownGenerator = (
+    _, CrawlerRunConfig, BM25ContentFilter, PruningFilter, DefaultMarkdownGenerator = (
         _crawl4ai_imports()
     )
     if query:
         filter_strategy = BM25ContentFilter(user_query=query, bm25_threshold=1.2)
     else:
-        filter_strategy = PruningContentFilter(threshold=0.4)
+        filter_strategy = PruningFilter(threshold=0.4)
     return CrawlerRunConfig(
         markdown_generator=DefaultMarkdownGenerator(content_filter=filter_strategy),
         cache_mode="BYPASS",
