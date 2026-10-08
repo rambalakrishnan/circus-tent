@@ -10,7 +10,9 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import os
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -394,3 +396,40 @@ async def test_shutdown_forced_returns_one(tmp_path: Path, monkeypatch: pytest.M
     await cluster.start()
 
     assert await cluster.shutdown(0.05) == 1
+
+
+# ----------------------------------------------------------- pid resolution
+
+
+def test_pid_falls_back_to_proc_scan_for_persistent_context(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Persistent contexts expose no process handle (context.browser is None).
+
+    Regression guard for the recycle-safety property: terminate() waits for the
+    old browser to exit before a replacement may reuse the profile dir. If the
+    PID resolves to None that wait is silently skipped, which is exactly the
+    corrupted-profile failure the recycle design exists to prevent.
+    """
+    from circus_tent.browser import shard as shard_mod
+
+    shard = make_shard(tmp_path)
+    shard._browser = SimpleNamespace(browser=None)  # persistent-context shape
+
+    monkeypatch.setattr(shard_mod, "_find_browser_pid", lambda profile_dir: 4321, raising=False)
+    monkeypatch.setattr(shard_mod, "_pid_alive", lambda pid: True)
+
+    assert shard._pid() == 4321
+    assert shard._pid() == 4321  # cached while alive
+
+
+def test_pid_is_none_without_a_browser(tmp_path: Path) -> None:
+    shard = make_shard(tmp_path)
+    assert shard._pid() is None
+
+
+def test_pid_alive_probe_reports_reaped_pids() -> None:
+    from circus_tent.browser.shard import _pid_alive
+
+    assert _pid_alive(os.getpid()) is True
+    assert _pid_alive(2**22 + 12345) is False  # outside pid_max: reaped

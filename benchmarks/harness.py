@@ -756,17 +756,28 @@ def c5_recycle_correctness(args: argparse.Namespace, _ctx: dict[str, Any]) -> Cr
         try:
             from circus_tent.browser.shard import Shard
 
-            first = Shard(cfg, profile_dir, get_metrics(), logging.getLogger("bench"))
-            asyncio.run(asyncio.wait_for(first.initialize(), timeout=args.browser_timeout))
-            hash1 = str(first._manifest.manifest_hash)
-            pid1 = first._pid()
-            asyncio.run(asyncio.wait_for(first.terminate(), timeout=args.browser_timeout))
-            orphan = _pid_alive(pid1)
-            replacement = Shard(cfg, profile_dir, get_metrics(), logging.getLogger("bench"))
-            asyncio.run(asyncio.wait_for(replacement.initialize(), timeout=args.browser_timeout))
-            hash2 = str(replacement._manifest.manifest_hash)
-            pid2 = replacement._pid()
-            asyncio.run(asyncio.wait_for(replacement.terminate(), timeout=args.browser_timeout))
+            async def _recycle_sequence() -> tuple[str, int | None, bool, str, int | None]:
+                """One event loop for the whole sequence: Camoufox/Playwright
+                objects are loop-bound, so mixing separate asyncio.run() calls
+                hangs teardown (that is what made this criterion SKIP)."""
+                first = Shard(cfg, profile_dir, get_metrics(), logging.getLogger("bench"))
+                await asyncio.wait_for(first.initialize(), timeout=args.browser_timeout)
+                hash1 = str(first._manifest.manifest_hash)
+                pid1 = first._pid()
+                await asyncio.wait_for(first.terminate(), timeout=args.browser_timeout)
+                orphan = _pid_alive(pid1)
+                replacement = Shard(cfg, profile_dir, get_metrics(), logging.getLogger("bench"))
+                await asyncio.wait_for(replacement.initialize(), timeout=args.browser_timeout)
+                hash2 = str(replacement._manifest.manifest_hash)
+                pid2 = replacement._pid()
+                await asyncio.wait_for(replacement.terminate(), timeout=args.browser_timeout)
+                return hash1, pid1, orphan, hash2, pid2
+
+            hash1, pid1, orphan, hash2, pid2 = asyncio.run(
+                asyncio.wait_for(
+                    _recycle_sequence(), timeout=args.browser_timeout * 4
+                )
+            )
             ok = hash1 == hash2 and not orphan and pid1 != pid2
             return Criterion(
                 "C5",

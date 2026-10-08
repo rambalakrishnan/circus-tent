@@ -76,6 +76,44 @@ async def _enter(camoufox_cm: Any) -> Any:
     return await camoufox_cm.__aenter__()
 
 
+def _find_browser_pid(profile_dir: Path) -> int | None:
+    """Best-effort PID lookup for the shard's browser process.
+
+    Playwright's persistent-context handle exposes no process object (unlike a
+    normal `launch()`, `context.browser` is None), so the process is located by
+    scanning /proc for a cmdline that references this profile directory. This
+    matters beyond bookkeeping: `terminate()` waits for the old process to exit
+    before a replacement may reuse the profile dir — without a real PID that
+    wait was silently skipped, risking the corrupted-profile failure the
+    recycle design exists to prevent.
+    """
+    needle = str(profile_dir)
+    proc_root = Path("/proc")
+    if not proc_root.exists():  # non-Linux: no /proc to scan
+        return None
+    for entry in proc_root.iterdir():
+        if not entry.name.isdigit():
+            continue
+        try:
+            cmdline = (entry / "cmdline").read_bytes().decode("utf-8", "replace")
+        except OSError:
+            continue
+        if needle in cmdline:
+            return int(entry.name)
+    return None
+
+
+def _pid_alive(pid: int) -> bool:
+    """Liveness probe: signal 0 performs error checking without sending a signal."""
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True  # exists but owned by another user
+    return True
+
+
 class Shard:
     """One isolated Camoufox process bound to a domain family + profile dir."""
 
@@ -90,6 +128,7 @@ class Shard:
         self._state = ShardState.TERMINATED
         self._browser: Any = None
         self._camoufox_cm: Any = None
+        self._pid_cache: int | None = None
         self._semaphore = asyncio.Semaphore(config.max_tabs)
         self._pages_processed = 0
         self._init_lock = asyncio.Lock()
@@ -113,7 +152,15 @@ class Shard:
         proc = getattr(getattr(self._browser, "browser", None), "process", None)
         if proc is not None:
             return int(proc.pid)
-        return getattr(self._browser, "pid", None)
+        # Persistent contexts expose no process handle — fall back to a /proc
+        # scan, cached while the process is still alive so repeated snapshots
+        # stay cheap and stable.
+        cached = self._pid_cache
+        if cached is not None and _pid_alive(cached):
+            return cached
+        found = _find_browser_pid(self.profile_dir)
+        self._pid_cache = found
+        return found
 
     async def initialize(self, headless_override: str | None = None) -> None:
         """INITIALIZING → READY. Concurrent callers await the first init."""
