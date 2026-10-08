@@ -136,10 +136,19 @@ Shard topology lives in `config/shards.yaml` (schema_version 1).
 
 ### 5.2 Fingerprint Persistence (`src/circus_tent/browser/fingerprint.py`)
 
-- First init of a profile dir: resolve Camoufox launch options (canvas, WebGL, audio,
-  navigator, screen, fonts, platform), serialize to `{profile_dir}/fingerprint.json`.
-- Every later launch loads the manifest and passes the same options back to the
-  launcher alongside `persistent_context=True`.
+- First init of a profile dir: resolve the full launch-options bundle — the launch
+  flags AND the generated identity (OS, navigator, screen, fonts, WebGL
+  vendor/renderer, canvas/audio surfaces) via camoufox's own generator — and
+  serialize it to `{profile_dir}/fingerprint.json`.
+- Every later launch loads the manifest and passes those options back to the
+  launcher (`persistent_context=True`, `fingerprint=<bundle>`, `os=<pinned>`,
+  `i_know_what_im_doing=True`). Camoufox otherwise randomises the OS and WebGL
+  vendor/renderer per launch, which is itself the "new device" signal.
+- **Verified on this host:** 3 consecutive launches with a pinned manifest produced
+  identical canvas/webgl/audio/navigator/screen/fonts hashes and a single
+  unchanged manifest hash (acceptance criterion 1 mechanism).
+- Verification entry point: `python3 <repo>/benchmarks/verify_browser.py` (or the
+  harness's C1 with `--with-browser`).
 - **Manifest is immutable after first creation.** Any launch-parameter change requires
   a full profile reset: purge profile dir + manifest, re-authenticate via MFA handoff.
   Changing fingerprint without clearing cookies = "new device" signal = account lockout
