@@ -1,0 +1,128 @@
+{
+  "generated_by": "benchmarks/make_fixtures.py",
+  "generator": "circus_tent.parser.trimmer.prune_html",
+  "profiles": {
+    "EXTRACT": {
+      "limit_bytes": 256000
+    },
+    "HEAL": {
+      "limit_bytes": 51200
+    }
+  },
+  "schema_version": 1,
+  "sources": [
+    {
+      "captured_at": "2026-10-08T06:59:16Z",
+      "extract_bytes": 3705,
+      "extract_oversize": false,
+      "heal_bytes": 2465,
+      "heal_oversize": false,
+      "heal_reduction_ratio": 0.966722,
+      "http_status": "200",
+      "raw_bytes": 74074,
+      "reduction_ratio": 0.949982,
+      "source": "governmentjobs",
+      "source_file": "captured_raw/governmentjobs.html",
+      "stale_outputs": [],
+      "url": "https://www.governmentjobs.com/"
+    },
+    {
+      "captured_at": "2026-10-08T06:59:15Z",
+      "extract_bytes": 8747,
+      "extract_oversize": false,
+      "heal_bytes": 6249,
+      "heal_oversize": false,
+      "heal_reduction_ratio": 0.966019,
+      "http_status": "200",
+      "raw_bytes": 183895,
+      "reduction_ratio": 0.952435,
+      "source": "greenhouse",
+      "source_file": "captured_raw/greenhouse.html",
+      "stale_outputs": [],
+      "url": "https://boards.greenhouse.io/greenhouse"
+    },
+    {
+      "captured_at": "2026-10-08T06:59:28Z",
+      "extract_bytes": 108,
+      "extract_oversize": false,
+      "heal_bytes": 45,
+      "heal_oversize": false,
+      "heal_reduction_ratio": 0.998371,
+      "http_status": "403",
+      "raw_bytes": 27626,
+      "reduction_ratio": 0.996091,
+      "source": "indeed",
+      "source_file": "captured_raw/indeed.html",
+      "stale_outputs": [],
+      "url": "https://www.indeed.com/jobs?q=software+engineer"
+    },
+    {
+      "captured_at": "2026-10-08T06:59:15Z",
+      "extract_bytes": 786,
+      "extract_oversize": false,
+      "heal_bytes": 645,
+      "heal_oversize": false,
+      "heal_reduction_ratio": 0.999094,
+      "http_status": "200",
+      "raw_bytes": 712045,
+      "reduction_ratio": 0.998896,
+      "source": "lever",
+      "source_file": "captured_raw/lever.html",
+      "stale_outputs": [],
+      "url": "https://jobs.lever.co/lever"
+    },
+    {
+      "captured_at": "2026-10-08T06:59:16Z",
+      "extract_bytes": 14544,
+      "extract_oversize": false,
+      "heal_bytes": 11275,
+      "heal_oversize": false,
+      "heal_reduction_ratio": 0.919883,
+      "http_status": "200",
+      "raw_bytes": 140731,
+      "reduction_ratio": 0.896654,
+      "source": "linkedin",
+      "source_file": "captured_raw/linkedin.html",
+      "stale_outputs": [],
+      "url": "https://www.linkedin.com/"
+    },
+    {
+      "captured_at": "2026-10-08T07:00:21Z",
+      "extract_bytes": 1048,
+      "extract_oversize": false,
+      "heal_bytes": 592,
+      "heal_oversize": false,
+      "heal_reduction_ratio": 0.977047,
+      "http_status": "200",
+      "raw_bytes": 25792,
+      "reduction_ratio": 0.959367,
+      "source": "workday_login",
+      "source_file": "captured_raw/workday_login.html",
+      "stale_outputs": [],
+      "url": "https://www.myworkday.com/wday/authgwy/citi/login.htmld"
+    },
+    {
+      "captured_at": "2026-10-08T07:00:21Z",
+      "extract_bytes": 36,
+      "extract_oversize": false,
+      "heal_bytes": 0,
+      "heal_oversize": false,
+      "heal_reduction_ratio": 1.0,
+      "http_status": "200",
+      "raw_bytes": 233,
+      "reduction_ratio": 0.845494,
+      "source": "workday_shell",
+      "source_file": "captured_raw/workday_shell.html",
+      "stale_outputs": [],
+      "url": "https://www.workdayjobs.com/"
+    }
+  ],
+  "totals": {
+    "extract_bytes": 28974,
+    "heal_bytes": 21271,
+    "heal_reduction_ratio": 0.981732,
+    "raw_bytes": 1164396,
+    "reduction_ratio": 0.975117,
+    "sources": 7
+  }
+}

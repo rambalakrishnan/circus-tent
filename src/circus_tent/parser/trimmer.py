@@ -246,8 +246,27 @@ class _Pruner(html.parser.HTMLParser):
     no frames). EXTRACT keeps all tags with semantic attrs; HEAL keeps
     interactive/textual only."""
 
-    _STRIP = {"script", "style", "noscript", "iframe", "link", "meta"}
-    _IMG = {"img", "svg"}
+    #: Tags whose *content* must be dropped. Tracked as a single open tag (not a
+    #: depth counter): HTML void elements (`<meta>`, `<link>`, `<br>`, ...) have
+    #: no closing tag, so a counter never returns to zero and silently swallows
+    #: the rest of the document — the bug that pruned a 5KB LinkedIn authwall to
+    #: 13 bytes.
+    _SKIP_CONTENT = {"script", "style", "noscript", "iframe", "template"}
+    #: Void/structural tags with nothing to emit and nothing to skip.
+    _DROP_VOID = {
+        "link",
+        "meta",
+        "base",
+        "col",
+        "embed",
+        "param",
+        "source",
+        "track",
+        "wbr",
+        "area",
+        "hr",
+        "br",
+    }
     _SEM = ("aria-label", "role", "title", "alt")
     _INTERACTIVE = {
         "button",
@@ -266,7 +285,7 @@ class _Pruner(html.parser.HTMLParser):
         super().__init__(convert_charrefs=True)
         self.profile = profile
         self.parts: list[str] = []
-        self._skip_depth = 0
+        self._skip_tag: str | None = None
         self._last_data_tag: str | None = None
         self._marker_close: str | None = None  # set while inside a [BUTTON:...] marker
         self._marker_role: str = ""
@@ -274,17 +293,26 @@ class _Pruner(html.parser.HTMLParser):
 
     def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
         tag = tag.lower()
-        if self._skip_depth:
-            self._skip_depth += 1
+        if self._skip_tag is not None:
             return
-        if tag in self._STRIP:
-            self._skip_depth = 1
+        if tag in self._SKIP_CONTENT:
+            self._skip_tag = tag
+            return
+        if tag in self._DROP_VOID:
             return
         a = {k.lower(): (v or "") for k, v in attrs}
-        if tag in self._IMG:
+        if tag == "img":
             label = a.get("aria-label") or a.get("alt") or a.get("title") or a.get("role") or ""
             if label:
                 self.parts.append(f"[ICON:{_WS_RE.sub(' ', label).strip()}]")
+            return
+        if tag == "svg":
+            label = (
+                a.get("aria-label") or a.get("aria-label") or a.get("title") or a.get("role") or ""
+            )
+            if label:
+                self.parts.append(f"[ICON:{_WS_RE.sub(' ', label).strip()}]")
+            self._skip_tag = "svg"  # drop <path>/<g> noise
             return
         if tag == "button" and a.get("role"):
             self._marker_role = _WS_RE.sub(" ", a["role"]).strip()
@@ -301,8 +329,9 @@ class _Pruner(html.parser.HTMLParser):
 
     def handle_endtag(self, tag: str) -> None:
         tag = tag.lower()
-        if self._skip_depth:
-            self._skip_depth -= 1
+        if self._skip_tag is not None:
+            if tag == self._skip_tag:
+                self._skip_tag = None
             return
         if self._marker_close == tag:
             text = _WS_RE.sub(" ", " ".join(self._marker_text)).strip()
@@ -316,7 +345,7 @@ class _Pruner(html.parser.HTMLParser):
             self._last_data_tag = None
 
     def handle_data(self, data: str) -> None:
-        if self._skip_depth:
+        if self._skip_tag is not None:
             return
         text = _WS_RE.sub(" ", data).strip()
         if not text:

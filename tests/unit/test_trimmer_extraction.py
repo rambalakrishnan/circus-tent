@@ -89,3 +89,58 @@ def test_schema_guided_extract_partial_on_missing_fields() -> None:
     result, incomplete = schema_guided_extract(md, schema)
     assert incomplete
     assert result == {"title": "Only Title"}
+
+
+# --------------------------------------------- regression: void-element swallowing
+
+
+def test_pruner_does_not_swallow_document_after_void_elements() -> None:
+    """Regression: void elements (<meta>, <link>) have no closing tag.
+
+    A depth-counter implementation never returned to zero after the first void
+    tag and silently dropped the rest of the document — a 5KB LinkedIn authwall
+    pruned to 13 bytes. The pruner must track one skipped tag, not a depth.
+    """
+    html = (
+        "<html><head>"
+        "<meta charset='utf-8'><meta name='viewport' content='w=1'><link rel='x' href='y'>"
+        "<title>T</title></head><body>"
+        "<h1>Visible Heading</h1><p>Visible body text that must survive pruning.</p>"
+        "<script>var hidden = 'DROP ME';</script>"
+        "<meta name='another'>"
+        "<p>Text after a second void element.</p>"
+        "</body></html>"
+    )
+    out = asyncio.run(prune_html(html, "EXTRACT"))
+    assert "Visible Heading" in out
+    assert "Visible body text that must survive pruning." in out
+    assert "Text after a second void element." in out
+    assert "DROP ME" not in out
+
+
+def test_pruner_keeps_text_on_captured_fixtures() -> None:
+    """Guard against the real-world version of the bug above: a large page must
+    not prune down to a near-empty stub. Skips when raw captures are absent
+    (they are gitignored)."""
+    import pathlib
+
+    raw_dir = pathlib.Path(__file__).resolve().parents[1] / "fixtures" / "captured_raw"
+    expectations = {
+        "linkedin.html": "LinkedIn",
+        "governmentjobs.html": "GovernmentJobs",
+        "greenhouse.html": "Opportunities",
+    }
+    checked = 0
+    for filename, needle in expectations.items():
+        path = raw_dir / filename
+        if not path.exists():
+            continue
+        raw = path.read_text(errors="replace")
+        out = asyncio.run(prune_html(raw, "EXTRACT"))
+        assert len(out) > 500, f"{filename} pruned to {len(out)} bytes"
+        assert needle in out, f"{filename}: expected marker {needle!r} in pruned output"
+        checked += 1
+    if checked == 0:
+        import pytest
+
+        pytest.skip("no raw captures present (gitignored)")
