@@ -1,0 +1,5 @@
+"""circus-tent CLI: serve + bootstrap."""
+
+from circus_tent.cli.main import build_parser, main
+
+__all__ = ["build_parser", "main"]
