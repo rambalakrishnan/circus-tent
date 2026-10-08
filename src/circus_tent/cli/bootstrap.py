@@ -14,7 +14,7 @@ import shutil
 from pathlib import Path
 
 from circus_tent.browser.fingerprint import build_launch_options, resolve_manifest
-from circus_tent.browser.shard import _launch
+from circus_tent.browser.shard import _enter, _launch
 from circus_tent.config.loader import ConfigLoader
 
 
@@ -62,7 +62,8 @@ async def bootstrap_shard(
     profile_dir.mkdir(parents=True, exist_ok=True)
     launch_options = build_launch_options(profile_dir, "false", humanize=True)
     manifest = resolve_manifest(profile_dir, launch_options)
-    browser = _launch(dict(manifest.launch_options))
+    camoufox_cm = _launch(dict(manifest.launch_options))
+    browser = await _enter(camoufox_cm)
 
     try:
         page = await browser.new_page()
@@ -78,6 +79,8 @@ async def bootstrap_shard(
     finally:
         with contextlib.suppress(Exception):
             await browser.close()
+        with contextlib.suppress(Exception):
+            await camoufox_cm.__aexit__(None, None, None)
 
     print(
         f"\nBootstrap complete for shard {shard_name!r}.\n"

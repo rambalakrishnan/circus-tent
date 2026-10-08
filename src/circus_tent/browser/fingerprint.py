@@ -108,21 +108,50 @@ def _canonical(options: dict[str, Any]) -> str:
     return json.dumps(options, sort_keys=True, separators=(",", ":"))
 
 
-def build_launch_options(profile_dir: Path, headless: str, humanize: bool = True) -> dict[str, Any]:
+def build_launch_options(
+    profile_dir: Path,
+    headless: str,
+    humanize: bool = True,
+    fingerprint: dict[str, Any] | None = None,
+    os_name: str = "windows",
+) -> dict[str, Any]:
     """Full camoufox launch option set. NO random seeds, ever — the resolved
     options become the immutable fingerprint manifest.
 
-    Pinned call shape verified against camoufox 0.5.7 (persistent-context
-    options incl. headless="virtual").
+    Fingerprint immutability (ARCHITECTURE §5.2) requires pinning the
+    *generated* identity too, not just the launch flags: left alone, Camoufox
+    generates a fresh fingerprint per launch (random OS, random WebGL
+    vendor/renderer), which is exactly the "new device" signal we must avoid.
+    When ``fingerprint`` is not supplied the bundle is resolved ONCE here (via
+    camoufox's own generator) so the caller persists it in the manifest and
+    replays it on every subsequent launch. Verified against camoufox 0.5.7:
+    ``AsyncNewBrowser(persistent_context: bool)`` is the switch that makes
+    ``user_data_dir`` take the launch_persistent_context path, and pinning
+    ``fingerprint=`` + ``os=`` reproduces canvas/webgl/audio/navigator/screen
+    across separate launches (probe: zero drift over 3 launches).
     """
     normalized = {"virtual": "virtual", "true": True, "false": False}.get(headless, "virtual")
+    if fingerprint is None:
+        from camoufox.fingerprints import generate_fingerprint  # noqa: PLC0415
+
+        fingerprint = generate_fingerprint(window=(1440, 900), os=os_name)
     return {
+        # Required for user_data_dir to be honored: without this flag camoufox
+        # calls BrowserType.launch() (which rejects user_data_dir) instead of
+        # launch_persistent_context().
+        "persistent_context": True,
         "user_data_dir": str(profile_dir / "user_data"),
         "headless": normalized,
         "humanize": humanize,
         "viewport": {"width": 1440, "height": 900},
         "locale": "en-US",
         "timezone_id": "UTC",
+        # Pinned identity — immutable per profile.
+        "os": os_name,
+        "fingerprint": fingerprint,
+        # Camoufox warns when a caller supplies its own fingerprint; pinning IS
+        # the requirement here, so acknowledge it explicitly.
+        "i_know_what_im_doing": True,
     }
 
 

@@ -10,6 +10,7 @@ TabContext therefore carries the shared persistent context plus a fresh Page.
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import json
 import logging
 import os
@@ -59,13 +60,20 @@ class ShardHealth:
 
 
 def _launch(launch_options: dict[str, Any]) -> Any:
-    """Lazy Camoufox launch. Pinned call shape for camoufox 0.5.7: the async
-    api's AsyncCamoufox is constructed SYNCHRONOUSLY with
-    **persistent_context_options and returns the persistent BrowserContext
-    wrapper (its methods — new_page, close — are awaited)."""
+    """Lazy Camoufox launch factory. Pinned call shape for camoufox 0.5.7:
+    ``AsyncCamoufox(**persistent_context_options)`` is an ASYNC CONTEXT MANAGER
+    whose ``__aenter__()`` returns the persistent BrowserContext (verified
+    against the installed 0.5.7 by introspection). Callers must keep the
+    context manager object and pair ``__aenter__`` with ``__aexit__``."""
     from camoufox.async_api import AsyncCamoufox  # noqa: PLC0415
 
     return AsyncCamoufox(**launch_options)  # type: ignore[no-untyped-call]
+
+
+async def _enter(camoufox_cm: Any) -> Any:
+    """Enter the Camoufox async context manager and return the persistent
+    BrowserContext."""
+    return await camoufox_cm.__aenter__()
 
 
 class Shard:
@@ -81,6 +89,7 @@ class Shard:
         self.logger = logger
         self._state = ShardState.TERMINATED
         self._browser: Any = None
+        self._camoufox_cm: Any = None
         self._semaphore = asyncio.Semaphore(config.max_tabs)
         self._pages_processed = 0
         self._init_lock = asyncio.Lock()
@@ -125,7 +134,8 @@ class Shard:
                     self._fingerprint_ok = False
                 # Launch with the MANIFEST options, never the freshly built ones —
                 # a manifest from an earlier launch wins (immutability).
-                self._browser = _launch(dict(self._manifest.launch_options))
+                self._camoufox_cm = _launch(dict(self._manifest.launch_options))
+                self._browser = await _enter(self._camoufox_cm)
                 self._fp_snapshot = await self._capture()
                 self._state = ShardState.READY
                 self.logger.info(
@@ -196,13 +206,16 @@ class Shard:
             task.cancel()
 
     async def flush(self) -> None:
-        """Explicit storage flush: close the persistent context cleanly."""
+        """Explicit storage flush: close the persistent context and tear down
+        the Camoufox async context manager (keeps the driver session clean)."""
         if self._browser is not None:
-            try:
+            with contextlib.suppress(Exception):
                 await self._browser.close()
-            except Exception as e:  # noqa: BLE001
-                self._last_error = f"flush: {type(e).__name__}: {e}"
             self._browser = None
+        if self._camoufox_cm is not None:
+            with contextlib.suppress(Exception):
+                await self._camoufox_cm.__aexit__(None, None, None)
+            self._camoufox_cm = None
 
     async def terminate(self) -> None:
         """Close the browser and wait for the process to fully exit (≤30s).

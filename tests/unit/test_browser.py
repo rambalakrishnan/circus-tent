@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import asyncio
-import json
 from pathlib import Path
 
 import pytest
@@ -36,23 +35,38 @@ class FakeClock:
         await asyncio.sleep(0)
 
 
-def test_build_launch_options_no_randomness(tmp_path: Path) -> None:
-    a = build_launch_options(tmp_path / "p", "virtual")
-    b = build_launch_options(tmp_path / "p", "virtual")
+def test_build_launch_options_pins_fingerprint(tmp_path: Path) -> None:
+    fp: dict = {"navigator": {"userAgent": "fixed"}, "webgl": {"renderer": "fixed"}}
+    a = build_launch_options(tmp_path / "p", "virtual", fingerprint=fp)
+    b = build_launch_options(tmp_path / "p", "virtual", fingerprint=fp)
     assert a == b
     assert a["headless"] == "virtual"
     assert a["user_data_dir"] == str(tmp_path / "p" / "user_data")
-    assert "seed" not in json.dumps(a).lower() or True  # no seed key present
+    assert a["persistent_context"] is True
+    assert a["i_know_what_im_doing"] is True
+    assert a["fingerprint"] == fp
+    assert a["os"] == "windows"
     assert not any("seed" in k.lower() for k in a)
 
 
-def test_manifest_immutable(tmp_path: Path) -> None:
-    opts = build_launch_options(tmp_path / "p", "virtual")
+def test_build_launch_options_generates_fingerprint_when_absent(tmp_path: Path) -> None:
+    a = build_launch_options(tmp_path / "p", "virtual")
+    assert isinstance(a["fingerprint"], dict)
+    assert a["fingerprint"]  # non-empty generated bundle
+
+
+def test_manifest_immutable_and_pins_fingerprint(tmp_path: Path) -> None:
+    fp = {"navigator": {"userAgent": "pinned-ua"}, "webgl": {"renderer": "pinned-gl"}}
+    opts = build_launch_options(tmp_path / "p", "virtual", fingerprint=fp)
     m1 = resolve_manifest(tmp_path / "p", opts)
-    opts2 = build_launch_options(tmp_path / "p", "false")  # different headless
-    m2 = resolve_manifest(tmp_path / "p", opts2)
-    assert m1.manifest_hash == m2.manifest_hash  # manifest wins, never overwritten
+    # a second resolve attempts to change the fingerprint — the manifest wins
+    other = build_launch_options(
+        tmp_path / "p", "false", fingerprint={"navigator": {"userAgent": "DIFFERENT"}}
+    )
+    m2 = resolve_manifest(tmp_path / "p", other)
+    assert m1.manifest_hash == m2.manifest_hash
     assert m2.launch_options["headless"] == "virtual"
+    assert m2.launch_options["fingerprint"] == fp
 
 
 def test_compare_fingerprints() -> None:
